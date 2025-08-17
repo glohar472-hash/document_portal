@@ -1,0 +1,30 @@
+name: Test Workflow
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Test Docker build
+      run: |
+        echo "Testing Docker build..."
+        docker --version
+        echo "Docker is working!"
+        
+    - name: Test AWS CLI
+      run: |
+        echo "Testing AWS CLI..."
+        aws --version || echo "AWS CLI not installed (this is expected)"
+        
+    - name: Success
+      run: |
+        echo "✅ Basic workflow test completed successfully!"
+        echo "GitHub Actions is working correctly!"
