@@ -1,0 +1,208 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Document Portal - Business Dashboard",
+    "tags": ["business", "document-portal", "production"],
+    "style": "dark",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "📊 Business Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rate(document_uploads_total[5m]))",
+            "legendFormat": "Uploads/min"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "displayMode": "list"
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "📈 Document Processing Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(document_processing_duration_seconds_sum[5m]) / rate(document_processing_duration_seconds_count[5m])",
+            "legendFormat": "Avg Processing Time"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "💬 Chat Activity",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(rate(chat_queries_total[5m])) by (status)",
+            "legendFormat": "{{status}}"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "id": 4,
+        "title": "🔍 Search Performance",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(search_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "95th Percentile"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 0,
+          "y": 16
+        }
+      },
+      {
+        "id": 5,
+        "title": "📁 File Type Distribution",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum(document_uploads_total) by (file_type)",
+            "legendFormat": "{{file_type}}"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 8,
+          "y": 16
+        }
+      },
+      {
+        "id": 6,
+        "title": "🚨 Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(document_processing_errors_total[5m]))",
+            "legendFormat": "Errors/min"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 16,
+          "y": 16
+        }
+      },
+      {
+        "id": 7,
+        "title": "👥 User Activity",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(rate(user_sessions_total[5m]))",
+            "legendFormat": "Active Sessions"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 24
+        }
+      },
+      {
+        "id": 8,
+        "title": "💾 Storage Usage",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "sum(document_storage_bytes) / 1024 / 1024 / 1024",
+            "legendFormat": "GB Used"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "GB",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 50},
+                {"color": "red", "value": 80}
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 0,
+          "y": 32
+        }
+      },
+      {
+        "id": 9,
+        "title": "⚡ API Response Times",
+        "type": "heatmap",
+        "targets": [
+          {
+            "expr": "sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint)",
+            "legendFormat": "{{endpoint}}"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 16,
+          "x": 8,
+          "y": 32
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "30s"
+  }
+}

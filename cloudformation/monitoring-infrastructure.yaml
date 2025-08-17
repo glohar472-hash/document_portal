@@ -1,0 +1,352 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Production Monitoring Infrastructure - Grafana, Prometheus, Observability Stack'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'prod'
+    Description: 'Environment name'
+    AllowedValues: ['prod', 'staging']
+
+Resources:
+  # VPC for Monitoring Stack
+  MonitoringVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.1.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-monitoring-vpc'
+
+  # Internet Gateway
+  MonitoringInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-monitoring-igw'
+
+  # Attach Internet Gateway to VPC
+  MonitoringInternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref MonitoringInternetGateway
+      VpcId: !Ref MonitoringVPC
+
+  # Public Subnets for Monitoring
+  MonitoringPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MonitoringVPC
+      CidrBlock: 10.1.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-monitoring-public-subnet-1'
+
+  MonitoringPublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MonitoringVPC
+      CidrBlock: 10.1.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-monitoring-public-subnet-2'
+
+  # Route Table for Public Subnets
+  MonitoringPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MonitoringVPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-monitoring-public-routes'
+
+  # Route to Internet Gateway
+  MonitoringPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: MonitoringInternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref MonitoringPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MonitoringInternetGateway
+
+  # Associate Public Subnets with Route Table
+  MonitoringPublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MonitoringPublicSubnet1
+      RouteTableId: !Ref MonitoringPublicRouteTable
+
+  MonitoringPublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MonitoringPublicSubnet2
+      RouteTableId: !Ref MonitoringPublicRouteTable
+
+  # Security Groups
+  MonitoringALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Environment}-monitoring-alb-sg'
+      GroupDescription: 'Security group for Monitoring ALB'
+      VpcId: !Ref MonitoringVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-monitoring-alb-sg'
+
+  MonitoringECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Environment}-monitoring-ecs-sg'
+      GroupDescription: 'Security group for Monitoring ECS tasks'
+      VpcId: !Ref MonitoringVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref MonitoringALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 9090
+          ToPort: 9090
+          SourceSecurityGroupId: !Ref MonitoringALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref MonitoringALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-monitoring-ecs-sg'
+
+  # Application Load Balancer for Monitoring
+  MonitoringALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${Environment}-monitoring-alb'
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref MonitoringPublicSubnet1
+        - !Ref MonitoringPublicSubnet2
+      SecurityGroups:
+        - !Ref MonitoringALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-monitoring-alb'
+
+  # Target Groups
+  GrafanaTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${Environment}-grafana-tg'
+      Port: 3000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref MonitoringVPC
+      HealthCheckPath: /api/health
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 3000
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      HealthCheckTimeoutSeconds: 5
+      HealthCheckIntervalSeconds: 30
+
+  PrometheusTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${Environment}-prometheus-tg'
+      Port: 9090
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref MonitoringVPC
+      HealthCheckPath: /-/healthy
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 9090
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      HealthCheckTimeoutSeconds: 5
+      HealthCheckIntervalSeconds: 30
+
+  # Listeners
+  GrafanaListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref GrafanaTargetGroup
+      LoadBalancerArn: !Ref MonitoringALB
+      Port: 80
+      Protocol: HTTP
+
+  # ECS Cluster for Monitoring
+  MonitoringECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${Environment}-monitoring-cluster'
+      CapacityProviders:
+        - FARGATE
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-monitoring-cluster'
+
+  # CloudWatch Log Groups
+  GrafanaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${Environment}-grafana'
+      RetentionInDays: 30
+
+  PrometheusLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${Environment}-prometheus'
+      RetentionInDays: 30
+
+  # ECS Task Definitions
+  GrafanaTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-grafana-task'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole'
+      ContainerDefinitions:
+        - Name: grafana
+          Image: grafana/grafana:latest
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          Essential: true
+          Environment:
+            - Name: GF_SECURITY_ADMIN_PASSWORD
+              Value: 'admin123'
+            - Name: GF_USERS_ALLOW_SIGN_UP
+              Value: 'false'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref GrafanaLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  PrometheusTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-prometheus-task'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole'
+      ContainerDefinitions:
+        - Name: prometheus
+          Image: prom/prometheus:latest
+          PortMappings:
+            - ContainerPort: 9090
+              Protocol: tcp
+          Essential: true
+          Command:
+            - '--config.file=/etc/prometheus/prometheus.yml'
+            - '--storage.tsdb.path=/prometheus'
+            - '--web.console.libraries=/etc/prometheus/console_libraries'
+            - '--web.console.templates=/etc/prometheus/consoles'
+            - '--storage.tsdb.retention.time=200h'
+            - '--web.enable-lifecycle'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref PrometheusLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  # ECS Services
+  GrafanaService:
+    Type: AWS::ECS::Service
+    DependsOn: GrafanaListener
+    Properties:
+      ServiceName: !Sub '${Environment}-grafana-service'
+      Cluster: !Ref MonitoringECSCluster
+      TaskDefinition: !Ref GrafanaTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref MonitoringPublicSubnet1
+            - !Ref MonitoringPublicSubnet2
+          SecurityGroups:
+            - !Ref MonitoringECSSecurityGroup
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - ContainerName: grafana
+          ContainerPort: 3000
+          TargetGroupArn: !Ref GrafanaTargetGroup
+      HealthCheckGracePeriodSeconds: 60
+
+  PrometheusService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${Environment}-prometheus-service'
+      Cluster: !Ref MonitoringECSCluster
+      TaskDefinition: !Ref PrometheusTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref MonitoringPublicSubnet1
+            - !Ref MonitoringPublicSubnet2
+          SecurityGroups:
+            - !Ref MonitoringECSSecurityGroup
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - ContainerName: prometheus
+          ContainerPort: 9090
+          TargetGroupArn: !Ref PrometheusTargetGroup
+      HealthCheckGracePeriodSeconds: 60
+
+Outputs:
+  MonitoringVPCId:
+    Description: Monitoring VPC ID
+    Value: !Ref MonitoringVPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VPC-ID'
+
+  MonitoringALBDNSName:
+    Description: Monitoring ALB DNS Name
+    Value: !GetAtt MonitoringALB.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-ALB-DNS-NAME'
+
+  GrafanaURL:
+    Description: Grafana URL
+    Value: !Sub 'http://${MonitoringALB.DNSName}:3000'
+    Export:
+      Name: !Sub '${AWS::StackName}-GRAFANA-URL'
+
+  PrometheusURL:
+    Description: Prometheus URL
+    Value: !Sub 'http://${MonitoringALB.DNSName}:9090'
+    Export:
+      Name: !Sub '${AWS::StackName}-PROMETHEUS-URL'

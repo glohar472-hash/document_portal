@@ -1,0 +1,157 @@
+name: Deploy Monitoring Infrastructure
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'monitoring/**'
+      - '.github/workflows/monitoring-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+        - prod
+        - staging
+
+env:
+  AWS_REGION: us-east-1
+  ENVIRONMENT: ${{ github.event.inputs.environment || 'prod' }}
+
+jobs:
+  deploy-monitoring:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'prod' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Deploy Monitoring Infrastructure
+      run: |
+        echo "🚀 Deploying monitoring infrastructure to ${{ env.ENVIRONMENT }}..."
+        
+        # Deploy CloudFormation stack
+        aws cloudformation deploy \
+          --template-file cloudformation/monitoring-infrastructure.yaml \
+          --stack-name document-portal-monitoring-${{ env.ENVIRONMENT }} \
+          --parameter-overrides Environment=${{ env.ENVIRONMENT }} \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --no-fail-on-empty-changeset
+        
+        echo "✅ Monitoring infrastructure deployed successfully!"
+
+    - name: Wait for Stack Creation
+      run: |
+        echo "⏳ Waiting for monitoring stack to be ready..."
+        aws cloudformation wait stack-create-complete \
+          --stack-name document-portal-monitoring-${{ env.ENVIRONMENT }}
+        
+        echo "✅ Monitoring stack is ready!"
+
+    - name: Get Monitoring URLs
+      run: |
+        echo "🔍 Getting monitoring service URLs..."
+        
+        # Get ALB DNS name
+        ALB_DNS=$(aws cloudformation describe-stacks \
+          --stack-name document-portal-monitoring-${{ env.ENVIRONMENT }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`MonitoringALBDNSName`].OutputValue' \
+          --output text)
+        
+        echo "🌐 Monitoring ALB DNS: $ALB_DNS"
+        echo "📊 Grafana URL: http://$ALB_DNS:3000"
+        echo "📈 Prometheus URL: http://$ALB_DNS:9090"
+        
+        # Set outputs for other jobs
+        echo "ALB_DNS=$ALB_DNS" >> $GITHUB_ENV
+
+    - name: Wait for Services to be Ready
+      run: |
+        echo "⏳ Waiting for monitoring services to be ready..."
+        
+        # Wait for Grafana
+        echo "Waiting for Grafana..."
+        for i in {1..30}; do
+          if curl -f -s "http://$ALB_DNS:3000/api/health" > /dev/null; then
+            echo "✅ Grafana is ready!"
+            break
+          else
+            echo "⏳ Attempt $i: Grafana not ready yet..."
+            sleep 30
+          fi
+        done
+        
+        # Wait for Prometheus
+        echo "Waiting for Prometheus..."
+        for i in {1..30}; do
+          if curl -f -s "http://$ALB_DNS:9090/-/healthy" > /dev/null; then
+            echo "✅ Prometheus is ready!"
+            break
+          else
+            echo "⏳ Attempt $i: Prometheus not ready yet..."
+            sleep 30
+          fi
+        done
+
+    - name: Configure Grafana Dashboards
+      run: |
+        echo "🔧 Configuring Grafana dashboards..."
+        
+        # Wait a bit more for Grafana to fully initialize
+        sleep 60
+        
+        # Import business dashboard
+        if curl -f -s "http://$ALB_DNS:3000/api/health" > /dev/null; then
+          echo "Importing business dashboard..."
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d @monitoring/grafana-dashboards/document-portal-business-dashboard.json \
+            "http://admin:admin123@$ALB_DNS:3000/api/dashboards/db"
+          
+          echo "✅ Business dashboard imported!"
+        else
+          echo "❌ Grafana not accessible for dashboard import"
+        fi
+
+    - name: Test Monitoring Services
+      run: |
+        echo "🧪 Testing monitoring services..."
+        
+        # Test Grafana
+        echo "Testing Grafana..."
+        curl -f -s "http://$ALB_DNS:3000/api/health" && echo "✅ Grafana health check passed"
+        
+        # Test Prometheus
+        echo "Testing Prometheus..."
+        curl -f -s "http://$ALB_DNS:9090/-/healthy" && echo "✅ Prometheus health check passed"
+        
+        # Test metrics endpoint
+        echo "Testing metrics endpoint..."
+        curl -f -s "http://$ALB_DNS:9090/api/v1/query?query=up" && echo "✅ Prometheus metrics query working"
+
+    - name: Final Status
+      run: |
+        echo "🎉 MONITORING INFRASTRUCTURE DEPLOYMENT COMPLETED!"
+        echo ""
+        echo "📊 MONITORING SERVICES:"
+        echo "🌐 Load Balancer: http://$ALB_DNS"
+        echo "📊 Grafana Dashboard: http://$ALB_DNS:3000 (admin/admin123)"
+        echo "📈 Prometheus: http://$ALB_DNS:9090"
+        echo ""
+        echo "🔧 NEXT STEPS:"
+        echo "1. Access Grafana at http://$ALB_DNS:3000"
+        echo "2. Login with admin/admin123"
+        echo "3. Add Prometheus as data source: http://$ALB_DNS:9090"
+        echo "4. Import business dashboards"
+        echo "5. Configure alerts and notifications"
