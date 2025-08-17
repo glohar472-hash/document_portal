@@ -1,0 +1,84 @@
+{
+  "family": "prod-monitoring-stack",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::489356685327:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "grafana",
+      "image": "grafana/grafana:latest",
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "GF_SECURITY_ADMIN_PASSWORD",
+          "value": "admin123"
+        },
+        {
+          "name": "GF_USERS_ALLOW_SIGN_UP",
+          "value": "false"
+        },
+        {
+          "name": "GF_INSTALL_PLUGINS",
+          "value": "grafana-clock-panel,grafana-simple-json-datasource"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/prod-monitoring",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs-grafana"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    },
+    {
+      "name": "prometheus",
+      "image": "prom/prometheus:latest",
+      "portMappings": [
+        {
+          "containerPort": 9090,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "command": [
+        "--config.file=/etc/prometheus/prometheus.yml",
+        "--storage.tsdb.path=/prometheus",
+        "--web.console.libraries=/etc/prometheus/console_libraries",
+        "--web.console.templates=/etc/prometheus/consoles",
+        "--storage.tsdb.retention.time=200h",
+        "--web.enable-lifecycle"
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/prod-monitoring",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs-prometheus"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:9090/-/healthy || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}
