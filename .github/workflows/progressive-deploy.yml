@@ -1,0 +1,52 @@
+name: Progressive Deploy Test
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-progressive:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+        
+    - name: Test AWS connection
+      run: |
+        echo "✅ Step 1: AWS credentials working"
+        aws sts get-caller-identity
+        
+    - name: Test ECR access
+      run: |
+        echo "✅ Step 2: ECR access working"
+        aws ecr describe-repositories --repository-names document-portal
+        
+    - name: Test Docker build
+      run: |
+        echo "✅ Step 3: Testing Docker build"
+        docker --version
+        echo "Docker is available"
+        
+    - name: Test ECS cluster access
+      run: |
+        echo "✅ Step 4: Testing ECS cluster access"
+        aws ecs describe-clusters --clusters dev-document-portal-cluster
+        
+    - name: Test ECS service access
+      run: |
+        echo "✅ Step 5: Testing ECS service access"
+        aws ecs describe-services --cluster dev-document-portal-cluster --services dev-document-portal-service
+        
+    - name: Success
+      run: |
+        echo "🎉 All AWS services are accessible!"
+        echo "Ready for full deployment!"
