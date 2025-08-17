@@ -29,30 +29,33 @@ jobs:
 
     - name: Test AWS connection
       run: |
-        echo "Testing AWS connection..."
+        echo "✅ Step 1: AWS credentials working"
         aws sts get-caller-identity
-        echo "AWS connection successful!"
-
+        
     - name: Test ECR access
       run: |
-        echo "Testing ECR access..."
+        echo "✅ Step 2: ECR access working"
         aws ecr describe-repositories --repository-names document-portal
-        echo "ECR access successful!"
-
-    - name: Test ECS access
+        
+    - name: Test Docker build
       run: |
-        echo "Testing ECS access..."
-        aws ecs describe-clusters --clusters dev-document-portal-cluster
-        aws ecs describe-services --cluster dev-document-portal-cluster --services dev-document-portal-service
-        echo "ECS access successful!"
-
-    - name: Test Docker
-      run: |
-        echo "Testing Docker..."
+        echo "✅ Step 3: Testing Docker build"
         docker --version
-        echo "Docker available!"
-
+        echo "Docker is available"
+        
+    - name: Test ECS cluster access
+      run: |
+        echo "✅ Step 4: Testing ECS cluster access"
+        aws ecs describe-clusters --clusters dev-document-portal-cluster
+        
+    - name: Test ECS service access
+      run: |
+        echo "✅ Step 5: Testing ECS service access"
+        aws ecs describe-services --cluster dev-document-portal-cluster --services dev-document-portal-service
+        
     - name: Success
       run: |
-        echo "🎉 All components are working!"
+        echo "🎉 All AWS services are accessible!"
         echo "Ready for full deployment!"
+
+# 🚀 Triggering complete deployment to get ECS URL
